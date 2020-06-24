@@ -23,7 +23,7 @@ mixin ServicesBinding on BindingBase {
   void initInstances() {
     super.initInstances();
     _instance = this;
-    _defaultBinaryMessenger = createBinaryMessenger();
+    _defaultBinaryMessenger = _localStaticInstance ?? createBinaryMessenger();
     window.onPlatformMessage = defaultBinaryMessenger.handlePlatformMessage;
     initLicenses();
     SystemChannels.system.setMessageHandler(handleSystemMessage);
@@ -38,7 +38,7 @@ mixin ServicesBinding on BindingBase {
   /// This is used to send messages from the application to the platform, and
   /// keeps track of which handlers have been registered on each channel so
   /// it may dispatch incoming messages to the registered handler.
-  BinaryMessenger get defaultBinaryMessenger => _defaultBinaryMessenger;
+  BinaryMessenger get defaultBinaryMessenger => _defaultBinaryMessenger ?? _localStaticInstance;
   BinaryMessenger _defaultBinaryMessenger;
 
   /// Creates a default [BinaryMessenger] instance that can be used for sending
@@ -48,13 +48,22 @@ mixin ServicesBinding on BindingBase {
     return const _DefaultBinaryMessenger._();
   }
 
+  static BinaryMessenger _localStaticInstance;
+  static BinaryMessenger createBinaryMessenger2() {
+    _localStaticInstance ??= const _DefaultBinaryMessenger._();
+    ui.window.onPlatformMessage = _localStaticInstance.handlePlatformMessage;
+
+    return _localStaticInstance;
+  }
+
+
   /// Handler called for messages received on the [SystemChannels.system]
   /// message channel.
   ///
   /// Other bindings may override this to respond to incoming system messages.
   @protected
   @mustCallSuper
-  Future<void> handleSystemMessage(Object systemMessage) async { }
+  Future<void> handleSystemMessage(Object systemMessage) async {}
 
   /// Adds relevant licenses to the [LicenseRegistry].
   ///
@@ -63,7 +72,11 @@ mixin ServicesBinding on BindingBase {
   @protected
   @mustCallSuper
   void initLicenses() {
-    LicenseRegistry.addLicense(_addLicenses);
+    LicenseRegistry.licenses.toList().then((all) {
+      if (!all.contains(_addLicenses)) {
+        LicenseRegistry.addLicense(_addLicenses);
+      }
+    });
   }
 
   Stream<LicenseEntry> _addLicenses() async* {
@@ -87,9 +100,11 @@ mixin ServicesBinding on BindingBase {
       rawLicenses.complete(rootBundle.loadString('LICENSE', cache: false));
     });
     await rawLicenses.future;
-    final Completer<List<LicenseEntry>> parsedLicenses = Completer<List<LicenseEntry>>();
+    final Completer<List<LicenseEntry>> parsedLicenses =
+        Completer<List<LicenseEntry>>();
     Timer.run(() async {
-      parsedLicenses.complete(compute(_parseLicenses, await rawLicenses.future, debugLabel: 'parseLicenses'));
+      parsedLicenses.complete(compute(_parseLicenses, await rawLicenses.future,
+          debugLabel: 'parseLicenses'));
     });
     await parsedLicenses.future;
     yield* Stream<LicenseEntry>.fromIterable(await parsedLicenses.future);
@@ -179,7 +194,8 @@ class _DefaultBinaryMessenger extends BinaryMessenger {
           exception: exception,
           stack: stack,
           library: 'services library',
-          context: ErrorDescription('during a platform message response callback'),
+          context:
+              ErrorDescription('during a platform message response callback'),
         ));
       }
     });
@@ -218,8 +234,7 @@ class _DefaultBinaryMessenger extends BinaryMessenger {
   @override
   Future<ByteData> send(String channel, ByteData message) {
     final MessageHandler handler = _mockHandlers[channel];
-    if (handler != null)
-      return handler(message);
+    if (handler != null) return handler(message);
     return _sendPlatformMessage(channel, message);
   }
 
@@ -229,7 +244,8 @@ class _DefaultBinaryMessenger extends BinaryMessenger {
       _handlers.remove(channel);
     else
       _handlers[channel] = handler;
-    ui.channelBuffers.drain(channel, (ByteData data, ui.PlatformMessageResponseCallback callback) async {
+    ui.channelBuffers.drain(channel,
+        (ByteData data, ui.PlatformMessageResponseCallback callback) async {
       await handlePlatformMessage(channel, data, callback);
     });
   }

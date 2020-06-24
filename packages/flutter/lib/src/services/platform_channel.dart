@@ -500,7 +500,7 @@ class EventChannel {
   /// stream listener count changes from 0 to 1. Stream deactivation happens
   /// only when stream listener count changes from 1 to 0.
   Stream<dynamic> receiveBroadcastStream([ dynamic arguments ]) {
-    final MethodChannel methodChannel = MethodChannel(name, codec);
+    final MethodChannel methodChannel = MethodChannel(name, codec, _binaryMessenger);
     StreamController<dynamic> controller;
     controller = StreamController<dynamic>.broadcast(onListen: () async {
       binaryMessenger.setMessageHandler(name, (ByteData reply) async {
